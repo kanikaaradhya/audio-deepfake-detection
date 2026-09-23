@@ -32,6 +32,7 @@ This project takes a feature-engineering approach rather than an end-to-end deep
 Built as a seminar project (22IS4SRINT) at BMS College of Engineering, 2022–23, then extended with the classifier and API.
 
 ## My Role
+
 - Designed and implemented the feature extraction pipeline (8 feature types → 121-dimensional vector)
 - Built and trained the XGBoost + LightGBM soft-voting ensemble
 - Wrapped the trained model as a FastAPI REST endpoint for inference
@@ -104,6 +105,35 @@ MFCCs, chroma, and spectral features produce a value per time frame — for a 2-
 | **[Feature Engineering](docs/feature-engineering.md)** | All 8 feature types, why each matters for deepfake detection, extraction code |
 | **[Model Training](docs/model-training.md)** | Dataset prep, XGBoost + LightGBM config, ensemble strategy, evaluation |
 | **[API Endpoint](docs/api.md)** | FastAPI `/predict` route, request/response format, deployment |
+
+## Feature Visualizations
+
+Side-by-side comparisons of real vs. synthetic audio across the key features used by the classifier. These plots informed which features to extract — the visible differences between real and fake are what the model learns to quantify.
+
+### Amplitude Waveform
+| Real | Fake |
+|------|------|
+| ![Waveform Real](screenshots/01-waveform-real.png) | ![Waveform Fake](screenshots/02-waveform-fake.png) |
+
+### MFCC (Mel-Frequency Cepstral Coefficients)
+| Real | Fake |
+|------|------|
+| ![MFCC Real](screenshots/03-mfcc-real.png) | ![MFCC Fake](screenshots/04-mfcc-fake.png) |
+
+### Spectrogram
+| Real | Fake |
+|------|------|
+| ![Spectrogram Real](screenshots/05-spectrogram-real.png) | ![Spectrogram Fake](screenshots/06-spectrogram-fake.png) |
+
+### Spectral Centroid
+| Real | Fake |
+|------|------|
+| ![Centroid Real](screenshots/07-spectral-centroid-real.png) | ![Centroid Fake](screenshots/08-spectral-centroid-fake.png) |
+
+### Chroma
+| Real | Fake |
+|------|------|
+| ![Chroma Real](screenshots/09-chroma-real.png) | ![Chroma Fake](screenshots/10-chroma-fake.png) |
 
 ## Tech Stack
 
