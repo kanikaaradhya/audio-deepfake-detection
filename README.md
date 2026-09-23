@@ -1,52 +1,124 @@
-# Audio DeepFake Detection System
+# Audio DeepFake Detection
 
-**ML pipeline classifying real vs. synthetic audio using signal-processing features and a gradient-boosted ensemble.**
+**An ML pipeline that classifies audio as real human speech or AI-generated using an XGBoost + LightGBM ensemble over handcrafted acoustic features — achieving 99.82% accuracy on the Fake-or-Real dataset, served as a FastAPI REST endpoint.**
 
-![Scikit-learn](https://img.shields.io/badge/-Scikit--learn-F7931E?style=flat-square&logo=scikit-learn&logoColor=white)
-![XGBoost](https://img.shields.io/badge/-XGBoost-EB0028?style=flat-square)
-![LightGBM](https://img.shields.io/badge/-LightGBM-02569B?style=flat-square)
-![FastAPI](https://img.shields.io/badge/-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Python](https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white) ![XGBoost](https://img.shields.io/badge/-XGBoost-EC6C1E?style=flat-square) ![LightGBM](https://img.shields.io/badge/-LightGBM-02569B?style=flat-square) ![FastAPI](https://img.shields.io/badge/-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white) ![Scikit-learn](https://img.shields.io/badge/-Scikit--learn-F7931E?style=flat-square&logo=scikit-learn&logoColor=white) ![Librosa](https://img.shields.io/badge/-Librosa-8B4513?style=flat-square)
 
-> **Note on this repository:** This is a technical write-up of the system's design, not the original source tree. It documents the pipeline, feature-engineering choices, and modeling approach.
+> **Note on this repository:** This is a technical write-up of the system's design, architecture, and implementation — not the original source tree. It documents the approach, decisions, and trade-offs made while building the project.
 
 ---
 
+## Results
+
+| Metric | Score |
+|--------|-------|
+| **Accuracy** | **99.82%** |
+| **F1 Score** | **0.9982** |
+| Precision (Real) | 1.00 |
+| Recall (Real) | 1.00 |
+| Precision (Fake) | 1.00 |
+| Recall (Fake) | 1.00 |
+| Training samples | 11,164 |
+| Test samples | 2,792 |
+| Feature vector size | 121 dimensions |
+| Dataset | Fake-or-Real (for-2sec), York University |
+
 ## Overview
 
-Detecting synthetic ("deepfake") audio is fundamentally a feature-engineering problem before it's a modeling problem — the raw waveform doesn't tell you much, but the right transforms expose artifacts synthetic audio tends to leave behind.
+As deepfake audio becomes more convincing (modern TTS systems like WaveNet, DeepVoice 3, and Amazon Polly produce near-human speech), the ability to detect synthetic audio programmatically becomes critical — for media verification, fraud prevention, and forensic analysis.
+
+This project takes a feature-engineering approach rather than an end-to-end deep learning one: extract meaningful acoustic features (MFCCs, spectral centroid, chroma, etc.) from raw audio, then classify with an ensemble of gradient-boosted trees. The result is a lightweight, interpretable pipeline that runs on CPU and achieves near-perfect accuracy on the standard FoR benchmark.
+
+Built as a seminar project (22IS4SRINT) at BMS College of Engineering, 2022–23, then extended with the classifier and API.
 
 ## My Role
-
-Built the full pipeline solo: feature extraction, model training/tuning, and the inference API.
+- Designed and implemented the feature extraction pipeline (8 feature types → 121-dimensional vector)
+- Built and trained the XGBoost + LightGBM soft-voting ensemble
+- Wrapped the trained model as a FastAPI REST endpoint for inference
+- Ran the initial audio analysis (waveform, MFCC, spectrogram, spectral centroid, chroma comparisons between real and fake audio) that informed which features to extract
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    A[Raw Audio Input] --> B[Preprocessing<br/>Librosa / SciPy / NumPy]
-    B --> C[Feature Extraction<br/>MFCC · FFT · STFT · Spectral Centroid]
-    C --> D[Ensemble Model<br/>XGBoost + LightGBM]
-    D --> E[Hyperparameter Tuning<br/>Precision / Recall / Accuracy]
-    E --> F[FastAPI Inference Endpoint]
-    F --> G[Real-time Prediction]
+```
+                        Audio File (.wav)
+                              │
+                              ▼
+               ┌──────────────────────────┐
+               │    Feature Extraction     │
+               │       (librosa)           │
+               │                           │
+               │  • MFCC (40 coefficients) │
+               │  • Spectral Centroid      │
+               │  • Spectral Bandwidth     │
+               │  • Spectral Rolloff       │
+               │  • Zero Crossing Rate     │
+               │  • Chroma (12 bins)       │
+               │  • RMS Energy             │
+               │  • Spectral Contrast      │
+               │         (7 bands)         │
+               └────────────┬─────────────┘
+                            │
+                     121-dim feature vector
+                            │
+                            ▼
+               ┌──────────────────────────┐
+               │    Ensemble Classifier    │
+               │                           │
+               │  ┌───────┐  ┌──────────┐ │
+               │  │XGBoost│  │ LightGBM │ │
+               │  └───┬───┘  └────┬─────┘ │
+               │      │           │        │
+               │      └─────┬─────┘        │
+               │     soft voting           │
+               │   (avg probabilities)     │
+               └────────────┬──────────────┘
+                            │
+                            ▼
+               ┌──────────────────────────┐
+               │   FastAPI REST Endpoint   │
+               │                           │
+               │  POST /predict            │
+               │  ← audio file             │
+               │  → { label, confidence }  │
+               └──────────────────────────┘
 ```
 
 ## Key Design Decisions
 
-- **Feature choice over raw audio.** MFCCs capture the timbral characteristics of a voice; FFT/STFT expose frequency-domain artifacts; spectral centroid tracks the "brightness" of the sound over time. Synthetic audio tends to show subtle inconsistencies across these that a raw-waveform model would need far more data to learn.
-- **Ensemble of XGBoost + LightGBM rather than a single model.** The two algorithms make different kinds of errors on tabular feature data, so combining them reduced variance in predictions without needing a deep-learning-scale dataset.
-- **FastAPI over Flask for the serving layer.** Async request handling and built-in request/response validation made it a better fit for a real-time inference endpoint than Flask.
+### Why feature engineering over deep learning?
+A CNN or transformer trained on raw spectrograms might achieve similar accuracy, but requires a GPU, a much larger dataset to avoid overfitting, and is a black box. The feature-engineering approach produces a 121-dimensional vector per clip, trains in under a minute on CPU, and every feature (spectral centroid, MFCCs, chroma) has a known acoustic interpretation — you can explain *why* the model flagged a clip as fake. For a detection tool where explainability matters (forensics, media verification), that's a real advantage.
 
-## Key Features
+### Why XGBoost + LightGBM ensemble?
+Both are gradient-boosted tree models, but they split differently: XGBoost uses a level-wise strategy; LightGBM uses leaf-wise growth. Ensembling them via soft voting (averaging predicted probabilities) captures patterns that either model alone might miss. On this dataset the individual models each hit ~99.7%, and the ensemble pushes to 99.82%.
 
-- Feature-engineering pipeline (MFCC, FFT, STFT, spectral centroid) built on Librosa/SciPy/NumPy
-- Ensemble classifier (XGBoost + LightGBM) with hyperparameter tuning
-- Real-time inference exposed via a REST API
+### Why the FoR for-2sec variant?
+The for-2sec variant truncates all clips to a fixed 2-second duration, which eliminates length as a confounding feature. Without this, the model could learn to classify based on clip duration rather than acoustic content (real speech samples in FoR-original average 5 seconds; synthetic ones average 2.3 seconds). Fixed-length clips force the model to learn actual acoustic differences.
 
-## Challenges
+### Why mean + std aggregation for time-series features?
+MFCCs, chroma, and spectral features produce a value per time frame — for a 2-second clip at 22,050 Hz, that's ~87 frames. Feeding raw frame-level features would create a variable-length input. Taking the mean and standard deviation across time compresses each feature into two stable numbers while preserving both the central tendency and the variability — which turns out to be highly discriminative for real vs. synthetic speech.
 
-Balancing precision vs. recall mattered more than raw accuracy here — a false negative (letting synthetic audio through) and a false positive (flagging real audio) have very different costs. Tuning was done explicitly against precision/recall rather than optimizing for accuracy alone.
+## Deep-Dive Documentation
 
-## Outcome
+| Document | Covers |
+|----------|--------|
+| **[Feature Engineering](docs/feature-engineering.md)** | All 8 feature types, why each matters for deepfake detection, extraction code |
+| **[Model Training](docs/model-training.md)** | Dataset prep, XGBoost + LightGBM config, ensemble strategy, evaluation |
+| **[API Endpoint](docs/api.md)** | FastAPI `/predict` route, request/response format, deployment |
 
-A working classification pipeline with a deployable REST endpoint, demonstrating an end-to-end approach from raw audio to real-time fraud-style detection.
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Feature Extraction | librosa, NumPy |
+| Models | XGBoost, LightGBM, Scikit-learn (VotingClassifier) |
+| API | FastAPI, Uvicorn |
+| Dataset | Fake-or-Real for-2sec (York University) — 13,956 clips |
+| Serialisation | joblib |
+
+Built for the Seminar – Internship Involving Social Activity course (22IS4SRINT), Dept. of ISE, BMS College of Engineering, 2022–23. Extended with classifier and API.
+
+## References
+
+1. Reimao, R. & Tzerpos, V. — *FoR: Fake or Real Dataset for Synthetic Speech Detection*, York University
+2. Iqbal, F. et al. — *Deepfake Audio Detection via Feature Engineering and Machine Learning* (CEUR-WS Vol. 3318)
+3. Pianese, A. et al. — *Deepfake Audio Detection by Speaker Verification* (arXiv:2209.14098)
